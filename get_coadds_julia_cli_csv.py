@@ -8,6 +8,12 @@ A header row with at least two columns (defaults shown):
   start_jd,end_jd
 followed by rows of float values.
 
+NaN/inf handling in coaddition
+------------------------------
+During coaddition, any pixel with NaN/inf flux or NaN/inf uncertainty is ignored for that exposure.
+Pixels with uncertainty <= 0 are ignored. If no valid exposures contribute to a pixel, the
+coadded flux and uncertainty are set to NaN for that pixel.
+
 Outputs
 -------
 An HDF5 file with groups for NEID and EXPRES, each containing:
@@ -67,20 +73,7 @@ class CoaddResult:
 # -----------------------------------------------------------------------------
 
 def load_overlaps_csv(path: str, start_col: str = "start_jd", end_col: str = "end_jd"):
-    """Load overlap windows from a CSV with columns `start_col` and `end_col`.
-
-    Parameters
-    ----------
-    path : str
-        Path to CSV.
-    start_col, end_col : str
-        Column names for overlap window start and end.
-
-    Returns
-    -------
-    overlaps : list[tuple[float, float]]
-        List of (start_jd, end_jd) float tuples.
-    """
+    """Load overlap windows from a CSV with columns `start_col` and `end_col`."""
 
     overlaps: List[Tuple[float, float]] = []
     with open(path, "r", newline="") as f:
@@ -159,11 +152,19 @@ def build_date_sets(
 
 
 # -----------------------------------------------------------------------------
-# Coaddition
+# Coaddition (with NaN handling)
 # -----------------------------------------------------------------------------
 
 def coadd_spectra(date_sets: DateSets, instrument: str):
-    """Coadd spectra within each date_set using inverse-variance weighting."""
+    """Coadd spectra within each date_set using inverse-variance weighting.
+
+    NaN handling
+    -----------
+    - Any pixel with NaN/inf flux or NaN/inf uncertainty is ignored for that exposure.
+    - Uncertainties <= 0 are ignored.
+    - The coadd at a pixel is computed from remaining valid exposures.
+    - If *no* valid exposures contribute to a pixel, the coadded flux/uncertainty is set to NaN.
+    """
 
     all_waves: List[np.ndarray] = []
     all_fluxes: List[np.ndarray] = []
@@ -191,16 +192,31 @@ def coadd_spectra(date_sets: DateSets, instrument: str):
 
             if wave_ref is None:
                 wave_ref = wave
-            flux_list.append(flux)
-            unc_list.append(unc)
+            flux_list.append(np.asarray(flux, dtype=float))
+            unc_list.append(np.asarray(unc, dtype=float))
 
-        fluxes = np.asarray(flux_list)
-        uncs = np.asarray(unc_list)
+        fluxes = np.asarray(flux_list, dtype=float)
+        uncs = np.asarray(unc_list, dtype=float)
 
-        weights = 1.0 / (uncs ** 2)
-        weighted_flux = fluxes * weights
-        coadd_flux = np.sum(weighted_flux, axis=0) / np.sum(weights, axis=0)
-        coadd_unc = np.sqrt(1.0 / np.sum(weights, axis=0))
+        # Valid pixels: finite flux & finite unc & unc>0
+        valid = np.isfinite(fluxes) & np.isfinite(uncs) & (uncs > 0)
+
+        # Compute weights only where valid
+        weights = np.zeros_like(uncs, dtype=float)
+        weights[valid] = 1.0 / (uncs[valid] ** 2)
+
+        wflux = np.zeros_like(fluxes, dtype=float)
+        wflux[valid] = fluxes[valid] * weights[valid]
+
+        sum_w = np.sum(weights, axis=0)
+        sum_wflux = np.sum(wflux, axis=0)
+
+        coadd_flux = np.full_like(sum_w, np.nan, dtype=float)
+        ok = sum_w > 0
+        coadd_flux[ok] = sum_wflux[ok] / sum_w[ok]
+
+        coadd_unc = np.full_like(sum_w, np.nan, dtype=float)
+        coadd_unc[ok] = np.sqrt(1.0 / sum_w[ok])
 
         all_waves.append(np.asarray(wave_ref))
         all_fluxes.append(np.asarray(coadd_flux))
