@@ -16,10 +16,10 @@
 #SBATCH --mem-per-cpu=2GB
 
 ## Save STDOUT and STDERR into one file (%j will expand to become the SLURM job id)
-#SBATCH --output=reprocess_wls_%A_%a.log
+#SBATCH --output=find_wl_variation_%A_%a.log
 
 ## Specificy job name, so easy to find using squeue –u
-#SBATCH --job-name=reprocess_wls
+#SBATCH --job-name=find_wl_variation
 
 
 ## Uncomment next two lines (by removing one of #'s in each line) and replace with your email if you want to be notifed when jobs start and stop
@@ -43,7 +43,13 @@ echo "About to change into $SLURM_SUBMIT_DIR"
 cd $SLURM_SUBMIT_DIR            # Change into directory where job was submitted from
 
 date
-python intra_day_wavelength_variation_to_csv.py --instrument NEID --data-dir "/storage/group/ebf11/default/pipeline/neid_solar/data/v1.4/L2/2022/" --out-csv neid_intra_day_summary_2022.csv --reference first --recursive
+
+python intra_day_wavelength_variation_to_csv_lowmem.py \
+  --instrument NEID \
+  --data-dir "/storage/group/ebf11/default/pipeline/neid_solar/data/v1.4/L2/2023/" \
+  --out-csv neid_intra_day_summary.csv \
+  --reference first \
+  --print --recursive
 echo "done!"
 date
 
