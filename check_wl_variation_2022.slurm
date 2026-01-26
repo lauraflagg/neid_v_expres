@@ -46,8 +46,8 @@ date
 
 python intra_day_wavelength_variation_to_csv_lowmem.py \
   --instrument NEID \
-  --data-dir "/storage/group/ebf11/default/pipeline/neid_solar/data/v1.4/L2/2023/" \
-  --out-csv neid_intra_day_summary.csv \
+  --data-dir "/storage/group/ebf11/default/pipeline/neid_solar/data/v1.4/L2/2022/" \
+  --out-csv neid_intra_day_summary_2022.csv \
   --reference first \
   --print --recursive
 echo "done!"
