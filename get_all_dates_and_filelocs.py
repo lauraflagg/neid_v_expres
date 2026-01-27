@@ -19,14 +19,18 @@ NEID_file_locs=[]
 for root, dirs, files in os.walk(NEID_dir):
     for file in files:
         if file.endswith(".fits"):
-            file_path=os.path.join(root, file)
-            hdul=fits.open(file_path)
-            head=hdul[0].header
 
-            bjd=(head['SSBJD077']+head['SSBJD160'])/2
-            NEID_dates.append(bjd)
-            NEID_file_locs.append(file_path)
-            hdul.close()
+            file_path=os.path.join(root, file)
+            try:
+                hdul=fits.open(file_path)
+                head=hdul[0].header
+
+                bjd=(head['SSBJD077']+head['SSBJD160'])/2
+                NEID_dates.append(bjd)
+                NEID_file_locs.append(file_path)
+                hdul.close()
+            except:
+                print(f"Could not open {file_path}")
 
 # %%
 
@@ -38,13 +42,17 @@ for root, dirs, files in os.walk(EXPRES_dir):
     for file in files:
         if file.endswith(".fits"):
             file_path=os.path.join(root, file)
-            hdul=fits.open(file_path)
-            head=hdul[2].header
+            
+            try:
+                hdul=fits.open(file_path)
+                head=hdul[2].header
 
-            bjd=head['HIERARCH wtd_mdpt']
-            EXPRES_dates.append(bjd)
-            EXPRES_file_locs.append(file_path)
-            hdul.close()
+                bjd=head['HIERARCH wtd_mdpt']
+                EXPRES_dates.append(bjd)
+                EXPRES_file_locs.append(file_path)
+                hdul.close()
+            except:
+                print(f"Could not open {file_path}")
 
 # %%
 print(NEID_dates)
