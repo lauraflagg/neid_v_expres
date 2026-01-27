@@ -127,6 +127,7 @@ def read_neid_fits(hdul: fits.HDUList):
     flux = hdul["SCIFLUX"].data / hdul["SCIBLAZE"].data
     uncert = np.sqrt(hdul["SCIVAR"].data) / hdul["SCIBLAZE"].data
     wave0 = hdul["SCIWAVE"].data
+    head=hdul['PRIMARY'].header
     rvcors=[]
     for i in range(82,143):
         strfmt=str(i).zfill(3)
