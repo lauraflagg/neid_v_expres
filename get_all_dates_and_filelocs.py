@@ -29,8 +29,8 @@ for root, dirs, files in os.walk(NEID_dir):
                 NEID_dates.append(bjd)
                 NEID_file_locs.append(file_path)
                 hdul.close()
-                if (len(NEID_dates) % 50)==0:
-                    print(str(len(NEID_dates))+' dates done for NEID')
+                if (len(NEID_dates) % 500)==0:
+                    print(str(len(NEID_dates))+' spectra done for NEID')
             except:
                 print(f"Could not open {file_path}")
 
@@ -53,8 +53,8 @@ for root, dirs, files in os.walk(EXPRES_dir):
                 EXPRES_dates.append(bjd)
                 EXPRES_file_locs.append(file_path)
                 hdul.close()
-                if (len(EXPRES_dates) % 50)==0:
-                    print(str(len(EXPRES_dates))+' dates done for EXPRES')
+                if (len(EXPRES_dates) % 500)==0:
+                    print(str(len(EXPRES_dates))+' spectra done for EXPRES')
             except:
                 print(f"Could not open {file_path}")
 

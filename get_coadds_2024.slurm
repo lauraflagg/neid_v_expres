@@ -10,8 +10,8 @@
 
 ## Ask for one core on one node
 #SBATCH --nodes=1 
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --ntasks=8
+##SBATCH --cpus-per-task=8
 
 ## Promise that each processor will use no more than 1GB of RAM
 #SBATCH --mem-per-cpu=4GB
@@ -29,7 +29,7 @@
 
 
 # Recommended: CPU binding (makes workers stick to cores)
-export OMP_NUM_THREADS=1
+#export OMP_NUM_THREADS=1
 
 
 echo "Starting job $SLURM_JOB_NAME"
