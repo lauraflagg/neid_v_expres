@@ -123,10 +123,12 @@ def read_expr_fits(hdul: fits.HDUList):
 
 
 def read_neid_fits(hdul: fits.HDUList):
+    order_start=4
+    order_end=-5
     """Return (wavelength, flux, uncertainty) from a NEID reduced FITS."""
-    flux = hdul["SCIFLUX"].data / hdul["SCIBLAZE"].data
-    uncert = np.sqrt(hdul["SCIVAR"].data) / hdul["SCIBLAZE"].data
-    wave0 = hdul["SCIWAVE"].data
+    flux = (hdul["SCIFLUX"].data / hdul["SCIBLAZE"].data)[order_start:order_end]
+    uncert = (np.sqrt(hdul["SCIVAR"].data) / hdul["SCIBLAZE"].data)[order_start:order_end]
+    wave0 = hdul["SCIWAVE"].data[order_start:order_end]
     head=hdul['PRIMARY'].header
     rvcors=[]
     for i in range(82,143):
@@ -134,7 +136,7 @@ def read_neid_fits(hdul: fits.HDUList):
         #print(strfmt)
         rvcors.append(head['SSBRV'+strfmt]) #in km/s
     
-    barycor = np.mean(rvcors)
+    barycor = np.nanmean(rvcors)
     wave=wave0*(1+barycor/c_kms) #apply barycentric correction
     return wave, flux, uncert
 
@@ -210,7 +212,6 @@ def resample_to_grid(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Resample (flux, unc) from old_wave to new_wave using SpectRes.
 
-    Supports 1D or 2D echelle-style arrays (orders x pixels).
     For 2D, resampling is applied order-by-order.
     """
 
@@ -219,22 +220,11 @@ def resample_to_grid(
     flux = np.asarray(flux, dtype=float)
     unc = np.asarray(unc, dtype=float)
 
-    if new_wave.ndim == 1:
-        # Ensure increasing wavelength for SpectRes; then reverse outputs back if needed
-        new_w, (old_w, f, e), rev_new = _ensure_increasing(new_wave, old_wave, flux, unc)
-        old_w2, (f2, e2), rev_old = _ensure_increasing(old_w, f, e)
+    #check shape is 2d
+    if old_wave.ndim == 1:
+        print("old_wave is 1d")
+        print(old_wave.shape)
 
-        out = spectres.spectres(new_w, old_w2, f2, spec_errs=e2, fill=fill_value, verbose=False)
-        new_f, new_e = out
-
-        # Undo reversals to match original new_wave orientation
-        if rev_old:
-            new_f = np.flip(new_f, axis=-1)
-            new_e = np.flip(new_e, axis=-1)
-        if rev_new:
-            new_f = np.flip(new_f, axis=-1)
-            new_e = np.flip(new_e, axis=-1)
-        return np.asarray(new_f), np.asarray(new_e)
 
     if new_wave.ndim == 2:
         # Order-by-order
@@ -243,7 +233,8 @@ def resample_to_grid(
         new_unc = np.empty_like(unc, dtype=float)
 
         for o in range(n_orders):
-            nf, ne = resample_to_grid(new_wave[o], old_wave[o], flux[o], unc[o], fill_value=fill_value)
+            print(o, n_orders)
+            nf, ne = spectres.spectres(np.array(new_wave[o]), np.array(old_wave[o]), np.array(flux[o]), np.array(unc[o]), fill=fill_value)
             new_flux[o] = nf
             new_unc[o] = ne
 
