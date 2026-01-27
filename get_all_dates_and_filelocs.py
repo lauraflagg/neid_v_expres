@@ -1,6 +1,6 @@
 # %%
-NEID_dir="/Users/lauraflagg/OneDrive - Cornell University/stellar_activity/data/spectra/NEID/"
-EXPRES_dir="/Users/lauraflagg/OneDrive - Cornell University/stellar_activity/data/spectra/EXPRES/"
+NEID_dir="/storage/group/ebf11/default/pipeline/neid_solar/data/v1.4/L2/"
+EXPRES_dir="/storage/home/lvf5358/scratch/expres"
 
 # %%
 import os
