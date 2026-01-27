@@ -71,6 +71,10 @@ from astropy.time import Time
 # Returns (new_fluxes, new_errs) if spec_errs is provided.
 import spectres
 
+from astropy import constants, units
+
+c_kms=constants.c.value/10**3
+
 
 # -----------------------------------------------------------------------------
 # Types
@@ -122,7 +126,15 @@ def read_neid_fits(hdul: fits.HDUList):
     """Return (wavelength, flux, uncertainty) from a NEID reduced FITS."""
     flux = hdul["SCIFLUX"].data / hdul["SCIBLAZE"].data
     uncert = np.sqrt(hdul["SCIVAR"].data) / hdul["SCIBLAZE"].data
-    wave = hdul["SCIWAVE"].data
+    wave0 = hdul["SCIWAVE"].data
+    rvcors=[]
+    for i in range(82,143):
+        strfmt=str(i).zfill(3)
+        #print(strfmt)
+        rvcors.append(head['SSBRV'+strfmt]) #in km/s
+    
+    barycor = np.mean(rvcors)
+    wave=wave0*(1+barycor/c_kms) #apply barycentric correction
     return wave, flux, uncert
 
 
