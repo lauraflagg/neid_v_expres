@@ -136,7 +136,7 @@ def read_neid_fits(hdul: fits.HDUList):
         #print(strfmt)
         rvcors.append(head['SSBRV'+strfmt]) #in km/s
     
-    barycor = np.nanmean(rvcors)
+    barycor = np.nanmedian(rvcors)
     wave=wave0*(1+barycor/c_kms) #apply barycentric correction
     return wave, flux, uncert
 
@@ -233,7 +233,7 @@ def resample_to_grid(
         new_unc = np.empty_like(unc, dtype=float)
 
         for o in range(n_orders):
-            print(o, n_orders)
+            #print(o, n_orders)
             nf, ne = spectres.spectres(np.array(new_wave[o]), np.array(old_wave[o]), np.array(flux[o]), np.array(unc[o]), fill=fill_value)
             new_flux[o] = nf
             new_unc[o] = ne
