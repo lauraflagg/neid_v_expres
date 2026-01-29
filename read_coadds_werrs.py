@@ -256,7 +256,7 @@ def get_fit_results(data,neid_indices,line_list,fit_range,plot=False,plotbad=Fal
 
 
 # %%
-fit_results=get_fit_results(data,neid_indices,line_list,fit_range=.1, test=True,testnum=-1,dist_from_edge=200)
+fit_results=get_fit_results(data,neid_indices,line_list,fit_range=.1,dist_from_edge=200)
 
 # %%
 #save fit results to pickele file
