@@ -3,3 +3,7 @@ coadds_outputs.h5
 .DS_Store
 line_fit_results_neid_expres_overlap.pkl
 coadds_outputs_2024.h5
+line_fit_results_neid_expres_overlap_2024.pkl
+.ipynb_checkpoints/read_coadds_multidates-werr-streamlines-checkpoint.ipynb
+.ipynb_checkpoints/read_coadds_multidates-werr-checkpoint.ipynb
+coadds_outputs_test.h5
