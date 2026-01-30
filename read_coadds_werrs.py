@@ -219,7 +219,7 @@ def get_fit_results(data,neid_indices,line_list,fit_range,plot=False,plotbad=Fal
         #find line fits in both spectra that are at least 500 pixels from the edge of at least one order
         lines_to_use={}
     
-        cols_to_keep=['lambda','depth']
+        cols_to_keep=['lambda','depth','line_id']
         for col in cols_to_keep:
             lines_to_use[col]=[]
         for row in line_list:
