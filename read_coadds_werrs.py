@@ -256,12 +256,12 @@ def get_fit_results(data,neid_indices,line_list,fit_range,plot=False,plotbad=Fal
 
 
 # %%
-fit_results=get_fit_results(data,neid_indices,line_list,fit_range=.1,dist_from_edge=200)
+fit_results=get_fit_results(data,neid_indices,line_list,fit_range=.15,dist_from_edge=200)
 
 # %%
 #save fit results to pickele file
 
-with open('line_fit_results_neid_expres_overlap_2024_w_werr.pkl','wb') as f:
+with open('line_fit_results_neid_expres_overlap_2024_w_err_rangep15.pkl','wb') as f:
     pickle.dump(fit_results,f)
 
 # %%
