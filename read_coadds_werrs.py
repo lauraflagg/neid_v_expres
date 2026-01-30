@@ -190,7 +190,8 @@ def fit_lines(w,s,e,line_list,plot=False,wl_min=6000,wl_max=6030,fit_range=0.7,d
                                   'slope':result.params['slope'].value,'chi2':result.chisqr,
                                   'bic':result.bic,'r':result.rsquared,
                                   'line_center_index':line_center_index,
-                                  'line_depth':line_list['depth'][i]})
+                                  'line_depth':line_list['depth'][i],
+                                  'line_id':line_list['line_id'][i]})
     
     return line_fits
             

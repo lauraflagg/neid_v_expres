@@ -6,7 +6,7 @@
 #SBATCH --partition=basic 
 
 ## Time requested: 0 hours, 1 minutes, 0 seconds
-#SBATCH --time=10:00:00 
+#SBATCH --time=5:00:00 
 
 ## Ask for one core on one node
 #SBATCH --nodes=1 
