@@ -197,9 +197,12 @@ def fit_lines(
                     plt.show()
 
             # Save the fit results
-            line_fits.append({
+            order_central_wl = 0.5 * (wl_order.min() + wl_order.max())
+
+        line_fits.append({
                 'line_wl': float(l),
                 'order': int(o),
+            'order_central_wl': float(order_central_wl),
                 'amp': float(result.params['amp'].value),
                 'amp_err': None if result.params['amp'].stderr is None else float(result.params['amp'].stderr),
                 'cen': float(result.params['cen'].value),
