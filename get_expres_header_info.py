@@ -50,6 +50,10 @@ for i in range(len(dates)):
         out_individual_files['files'].append(fits_file)
         with fits.open(os.path.join(dates_paths[i], fits_file)) as hdul:
             #print(hdul.info())
+            head = hdul[0].header
+            print(head)
+            head = hdul[1].header
+            print(head)
             head = hdul[2].header
             print(head)
             # Do something with the header, e.g., print it or extract specific keywords
