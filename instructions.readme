@@ -1,0 +1,6 @@
+create_expres_download_script.ipynb -- create download scripts with window
+     files and table and download script from 
+     
+needed command to run generated download scripts:  chmod +rwx inst_download_YYYYqx.sh      
+     
+move_downloaded_files.py -- sorts downloaded files into folders
