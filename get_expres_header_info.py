@@ -4,7 +4,7 @@ from astropy.table import Table
 
 data_dir="/storage/home/lvf5358/scratch/"
 
-inst_dir='express'
+inst_dir='expres'
 
 folder=data_dir+inst_dir
 
