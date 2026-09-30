@@ -1,6 +1,7 @@
 import os
 from astropy.io import fits
 from astropy.table import Table
+import numpy as np
 
 data_dir="/storage/home/lvf5358/scratch/"
 
