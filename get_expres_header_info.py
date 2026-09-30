@@ -49,11 +49,11 @@ for i in range(len(dates)):
     for fits_file in fits_files:
         out_individual_files['files'].append(fits_file)
         with fits.open(os.path.join(dates_paths[i], fits_file)) as hdul:
-            header = hdul[1].header
+            head = hdul['ACTIVITY'].header
             # Do something with the header, e.g., print it or extract specific keywords
             for header_name in express_headers:
-                out_individual_files[header_name].append(header[header_name])
-                temp_head_sums[header_name] += np.float(header[header_name])
+                out_individual_files[header_name].append(head[header_name])
+                temp_head_sums[header_name] += np.float(head[header_name])
     for header_name in express_headers:
         out_combined_files[header_name][i] = temp_head_sums[header_name] / nfiles if nfiles > 0 else None
 
