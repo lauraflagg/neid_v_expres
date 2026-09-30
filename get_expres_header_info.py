@@ -49,8 +49,9 @@ for i in range(len(dates)):
     for fits_file in fits_files:
         out_individual_files['files'].append(fits_file)
         with fits.open(os.path.join(dates_paths[i], fits_file)) as hdul:
-            print(hdul.info())
-            head = hdul['ACTIVITY'].header
+            #print(hdul.info())
+            head = hdul[2].header
+            print(head)
             # Do something with the header, e.g., print it or extract specific keywords
             for header_name in express_headers:
                 out_individual_files[header_name].append(head[header_name])
