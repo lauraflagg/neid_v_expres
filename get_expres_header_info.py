@@ -1,5 +1,6 @@
 import os
 from astropy.io import fits
+from astropy.table import Table
 
 data_dir="/storage/home/lvf5358/scratch/"
 
@@ -27,10 +28,11 @@ for year in years:
 express_headers = ['BARYMJD','S-VALUE','HALPHA','HWIDTH','BIS']
 
 out_individual_files={}
+out_individual_files[files]=[]
 for header in express_headers:
     out_individual_files[header] = []
 
-out_individual_files[files]=[]
+
 
 out_combined_files = {}
 for header in express_headers:
@@ -55,3 +57,17 @@ for i in range(len(dates)):
         out_combined_files[header_name][i] = temp_head_sums[header_name] / nfiles if nfiles > 0 else None
 
 
+#write the combined files to disk using astropy.table.Table
+combined_table = Table()
+for header_name in express_headers:
+    combined_table[header_name] = out_combined_files[header_name]
+combined_table[dates] = dates
+
+combined_table.write('combined_expres_headers.csv', format='ascii.csv')
+
+#write the individual files to disk using astropy.table.Table
+
+individual_table = Table()
+for header_name in express_headers:
+    individual_table[header_name] = out_individual_files[header_name]
+individual_table.write(f'individual_expres_headers.csv', format='ascii.csv')
