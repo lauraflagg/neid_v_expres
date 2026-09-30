@@ -9,9 +9,9 @@ fits_files=[fi for fi in files if fi.endswith('.fits')]
 #file name format example: expresL2_202405265255.fits
 for file in fits_files:
     instrument=file.split('_')[0].split('L')[0]
-    year=file.split('_')[2][:4]
-    month=file.split('_')[2][4:6]
-    day=file.split('_')[2][6:8]
+    year=file.split('_')[1][:4]
+    month=file.split('_')[1][4:6]
+    day=file.split('_')[1][6:8]
 
     #destination directiory should be instrument/year/month/day
     dest_dir=os.path.join(data_dir, instrument, year, month, day)
