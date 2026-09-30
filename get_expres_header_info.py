@@ -52,7 +52,7 @@ for i in range(len(dates)):
             header = hdul[1].header
             # Do something with the header, e.g., print it or extract specific keywords
             for header_name in express_headers:
-                out_individual_files[header_name].append(header.get(header_name, None))
+                out_individual_files[header_name].append(header[header_name])
                 temp_head_sums[header_name] += header.get(header_name, None)
     for header_name in express_headers:
         out_combined_files[header_name][i] = temp_head_sums[header_name] / nfiles if nfiles > 0 else None
