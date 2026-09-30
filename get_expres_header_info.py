@@ -53,7 +53,7 @@ for i in range(len(dates)):
             # Do something with the header, e.g., print it or extract specific keywords
             for header_name in express_headers:
                 out_individual_files[header_name].append(header[header_name])
-                temp_head_sums[header_name] += header.get(header_name, None)
+                temp_head_sums[header_name] += np.float(header[header_name])
     for header_name in express_headers:
         out_combined_files[header_name][i] = temp_head_sums[header_name] / nfiles if nfiles > 0 else None
 
