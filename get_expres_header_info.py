@@ -28,7 +28,7 @@ for year in years:
 express_headers = ['BARYMJD','S-VALUE','HALPHA','HWIDTH','BIS']
 
 out_individual_files={}
-out_individual_files[files]=[]
+out_individual_files['files']=[]
 for header in express_headers:
     out_individual_files[header] = []
 
@@ -46,7 +46,7 @@ for i in range(len(dates)):
         temp_head_sums[header_name] = 0
     nfiles = len(fits_files)
     for fits_file in fits_files:
-        out_individual_files[files].append(fits_file)
+        out_individual_files['files'].append(fits_file)
         with fits.open(os.path.join(dates_paths[i], fits_file)) as hdul:
             header = hdul[1].header
             # Do something with the header, e.g., print it or extract specific keywords
