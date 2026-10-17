@@ -1,4 +1,5 @@
-create_expres_download_script.ipynb -- create download scripts with window
+create_expres_download_script.ipynb -- create download scripts 
+    in the format inst_download_YYYYqx.sh  with window
      files and table and download script from 
      
 needed command to run generated download scripts:  chmod +rwx inst_download_YYYYqx.sh      
