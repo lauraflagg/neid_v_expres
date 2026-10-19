@@ -9,3 +9,4 @@ line_fit_results_neid_expres_overlap_2024.pkl
 coadds_outputs_test.h5
 line_fit_results_neid_expres_overlap_2024_w_werr_rangep1.pkl
 *.pkl
+__pycache__/svalue.cpython-313.pyc
