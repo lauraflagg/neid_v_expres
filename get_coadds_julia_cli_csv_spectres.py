@@ -119,7 +119,7 @@ def read_expr_fits(hdul: fits.HDUList):
     flux = hdul[1].data["spectrum"]
     wave = hdul[1].data["bary_wavelength"]
     unc = hdul[1].data["uncertainty"]
-    return flux, wave, unc
+    return wave, flux,  unc
 
 
 def read_neid_fits(hdul: fits.HDUList):
@@ -269,7 +269,7 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
             if instrument.upper() == "NEID":
                 wave, flux, unc = read_neid_fits(hdul)
             elif instrument.upper() == "EXPRES":
-                flux, wave, unc = read_expr_fits(hdul)
+                wave, flux, unc = read_expr_fits(hdul)
             else:
                 raise ValueError(f"Unknown instrument: {instrument}")
 
