@@ -13,3 +13,10 @@ __pycache__/svalue.cpython-313.pyc
 analyze_line_fits_matchorders_old.ipynb
 analyze_line_fits.ipynb
 analyze_line_fits.ipynb
+old/analyze_line_fits_difforders.ipynb
+old/analyze_line_fits_py_temp.py
+old/read_coadds.ipynb
+old/read_coadds_and_fit_lines.py
+old/read_coadds_multidates-werr.ipynb
+old/read_coadds_multidates.ipynb
+old/read_coadds_test.ipynb
