@@ -79,6 +79,9 @@ c_kms=constants.c.value/10**3
 # -----------------------------------------------------------------------------
 # Types
 # -----------------------------------------------------------------------------
+# One observation is (Julian date scalar, FITS file-location string). A DateSet
+# is the list of observations belonging to one overlap window; DateSets contains
+# one such list per window.
 
 JD = float
 FileLoc = str
@@ -90,6 +93,7 @@ DateSets = List[DateSet]
 # -----------------------------------------------------------------------------
 # Input: overlaps CSV
 # -----------------------------------------------------------------------------
+# Reads the time boundaries that define which observations are grouped together.
 
 def load_overlaps_csv(path: str, start_col: str = "start_jd", end_col: str = "end_jd"):
     """Load overlap windows from a CSV with columns `start_col` and `end_col`."""
@@ -113,6 +117,9 @@ def load_overlaps_csv(path: str, start_col: str = "start_jd", end_col: str = "en
 # -----------------------------------------------------------------------------
 # FITS readers
 # -----------------------------------------------------------------------------
+# These functions normalize the instrument-specific FITS layouts to the common
+# return order (wavelength, flux, uncertainty), generally with order x pixel
+# arrays. They do not coadd; coadd_one_window handles the combination.
 
 def read_expr_fits(hdul: fits.HDUList):
     """Return (flux, wavelength, uncertainty) from an EXPRES reduced FITS."""
@@ -144,6 +151,8 @@ def read_neid_fits(hdul: fits.HDUList):
 # -----------------------------------------------------------------------------
 # Date-set construction
 # -----------------------------------------------------------------------------
+# For each overlap interval, select the NEID and EXPRES files whose Julian dates
+# fall inclusively between the start and end times.
 
 def build_date_sets(
     overlaps: Sequence[Tuple[JD, JD]],
@@ -184,6 +193,9 @@ def build_date_sets(
 # -----------------------------------------------------------------------------
 # SpectRes resampling helpers
 # -----------------------------------------------------------------------------
+# These helpers make wavelength order monotonic and resample each order
+# independently. They preserve the distinction between orders; resampling is
+# along the pixel/wavelength axis, not across orders.
 
 def _ensure_increasing(w: np.ndarray, *arrs: np.ndarray):
     """Ensure wavelength axis is increasing. If decreasing, reverse wavelength and matching arrays.
@@ -248,24 +260,49 @@ def resample_to_grid(
 # -----------------------------------------------------------------------------
 
 def coadd_one_window(window_obs: DateSet, instrument: str):
-    """Coadd a single overlap window in a streaming fashion.
+    """Coadd all observations in one overlap window, one array element at a time.
 
-    Common wavelength grid = wavelength array of the first exposure in the window.
-    All subsequent exposures are resampled onto this grid using SpectRes before accumulating.
+    Shapes:
+      * ``window_obs`` has N entries: (JD scalar, file-location string).
+      * Each loaded wavelength, flux, and uncertainty array is expected to have
+        shape S. For an echelle spectrum, S is typically (n_orders, n_pixels).
+      * Every accumulator and output array has shape S. Thus [order, column]
+        is accumulated only with the corresponding [order, column] from other
+        exposures; no weights are summed across different pixels.
+      * The resampling helper in this script supports a 2D wavelength grid.
+
+    At a given array position p, the inverse-variance weight of exposure k is
+    w[k,p] = 1 / unc[k,p]**2. The coadd is
+        flux_coadd[p] = sum_k(w[k,p] * flux[k,p]) / sum_k(w[k,p])
+    and, assuming independent measurement errors,
+        unc_coadd[p] = sqrt(1 / sum_k(w[k,p])).
+    Flux uncertainties are assumed to use the same units as flux; weights
+    therefore have units 1/(flux unit)**2.
     """
 
+    # No observations means there is no reference wavelength grid or spectrum.
+    # Keep the return convention: three empty 1D arrays.
     if len(window_obs) == 0:
         return np.array([]), np.array([]), np.array([])
 
+    # Per-pixel running totals, all with spectrum shape S:
+    #   sum_w[p]     = sum over exposures k of 1 / unc[k,p]**2
+    #   sum_wflux[p] = sum over exposures k of flux[k,p] / unc[k,p]**2
+    # They are initialized after the first file reveals the array shape.
     sum_w = None
     sum_wflux = None
+
+    # The first exposure defines the common wavelength grid. Its shape is S.
     wave_ref = None
 
-    # Reusable weight array (initialized after first exposure)
+    # Reused scratch array of shape S for the current exposure's weights.
     w = None
 
+    # Stream over exposures rather than loading all N spectra into a 3D cube.
     for j, (jd, floc) in enumerate(window_obs):
+        # Open one FITS file at a time; the context manager closes it after read.
         with fits.open(floc, memmap=True) as hdul:
+            # Instrument-specific readers return (wavelength, flux, uncertainty).
             if instrument.upper() == "NEID":
                 wave, flux, unc = read_neid_fits(hdul)
             elif instrument.upper() == "EXPRES":
@@ -273,46 +310,78 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
             else:
                 raise ValueError(f"Unknown instrument: {instrument}")
 
+        # Ensure arithmetic arrays are floating point; their shapes remain S.
         flux = np.asarray(flux, dtype=float)
         unc = np.asarray(unc, dtype=float)
         wave = np.asarray(wave)
 
         if wave_ref is None:
-            # Common grid is the first wavelength grid of the window
+            # First exposure: adopt its wavelength array (shape S) as the grid.
             wave_ref = wave
+
+            # Allocate zero-valued per-pixel accumulators and scratch weights,
+            # each shape S. Float dtype is needed for sums/division.
             sum_w = np.zeros_like(unc, dtype=float)
             sum_wflux = np.zeros_like(flux, dtype=float)
             w = np.zeros_like(unc, dtype=float)
         else:
-            # Resample to common grid
+            # Later exposures: interpolate/resample their flux and uncertainty
+            # onto wave_ref. The returned flux and unc should both have shape S.
+            # Locations outside spectral coverage are filled with NaN.
             flux, unc = resample_to_grid(wave_ref, wave, flux, unc, fill_value=np.nan)
 
-        # Shape consistency check
+        # Require resampled arrays to match accumulator shape S. This check
+        # prevents accidental broadcasting or combining incompatible grids.
         if flux.shape != sum_wflux.shape or unc.shape != sum_w.shape:
             raise ValueError(
                 f"Shape mismatch after resampling: expected {sum_w.shape}, got flux {flux.shape}, unc {unc.shape} for {floc}"
             )
 
-        # NaN-safe weighting
+        # Boolean mask with shape S: only finite flux, finite uncertainty,
+        # and strictly positive uncertainty are allowed to contribute.
         valid = np.isfinite(flux) & np.isfinite(unc) & (unc > 0)
 
+        # Reset scratch weights for this exposure. Invalid pixels stay at zero.
         w.fill(0.0)
-        np.square(unc, out=w, where=valid)        # w = unc^2
-        np.divide(1.0, w, out=w, where=valid)     # w = 1/unc^2
 
+        # At valid pixels, first calculate unc**2, then replace it with
+        # 1/unc**2. Both operations are elementwise over shape S.
+        np.square(unc, out=w, where=valid)        # w[p] = unc[p]**2
+        np.divide(1.0, w, out=w, where=valid)     # w[p] = 1 / unc[p]**2
+
+        # Elementwise accumulation: each pixel's total receives only the
+        # weight at that same pixel from this exposure.
         sum_w += w
+        # Add weighted flux only at valid pixels; invalid values (e.g. NaN)
+        # are not multiplied into or added to the flux accumulator.
         sum_wflux[valid] += flux[valid] * w[valid]
 
+    # Boolean array, shape S. True where at least one valid exposure
+    # contributed positive weight at that particular pixel.
     ok = sum_w > 0
 
+    # Initialize outputs to NaN so pixels with no valid exposures remain NaN.
     coadd_flux = np.full_like(sum_wflux, np.nan, dtype=float)
+
+    # Weighted mean, elementwise:
+    #   coadd_flux[p] = sum_wflux[p] / sum_w[p]
+    #                 = sum_k(flux[k,p] / unc[k,p]**2)
+    #                   / sum_k(1 / unc[k,p]**2)
+    # ``where=ok`` avoids division by zero where no exposure contributed.
     np.divide(sum_wflux, sum_w, out=coadd_flux, where=ok)
 
+    # Initialize uncertainty output to NaN for pixels without contributors.
     coadd_unc = np.full_like(sum_w, np.nan, dtype=float)
+
+    # Standard uncertainty of the inverse-variance weighted mean, assuming
+    # independent input errors:
+    #   Var(coadd_flux[p]) = 1 / sum_k(1 / unc[k,p]**2)
+    #   coadd_unc[p]       = sqrt(Var(coadd_flux[p]))
     np.sqrt(1.0 / sum_w, out=coadd_unc, where=ok)
 
+    # Return wavelength grid, weighted-mean flux and its 1-sigma uncertainty.
+    # All three have shape S for a non-empty window.
     return np.asarray(wave_ref), coadd_flux, coadd_unc
-
 
 # --- multiprocessing worker must be top-level for pickling ---
 
@@ -330,6 +399,8 @@ def _worker_task(args):
 # -----------------------------------------------------------------------------
 # HDF5 writer helpers
 # -----------------------------------------------------------------------------
+# Store lists as numbered groups and retain the date/file provenance for each
+# observation in each overlap window.
 
 def _vlen_str_dtype():
     return h5py.string_dtype(encoding="utf-8")
@@ -358,6 +429,8 @@ def _write_date_sets(parent: h5py.Group, date_sets: DateSets):
 # -----------------------------------------------------------------------------
 # Main save routine (incremental + optional parallel)
 # -----------------------------------------------------------------------------
+# Each window is coadded independently. Workers return NumPy arrays; only the
+# main process writes HDF5 datasets, avoiding concurrent writes through h5py.
 
 def save_coadds_hdf5_incremental(
     out_path: str,
@@ -417,6 +490,8 @@ def save_coadds_hdf5_incremental(
 # -----------------------------------------------------------------------------
 # Run everything
 # -----------------------------------------------------------------------------
+# High-level entry point: load the observation index, group files by window,
+# compute each instrument's coadds, and save the results.
 
 def run_coadds_and_save(
     overlaps: Sequence[Tuple[JD, JD]],
@@ -450,6 +525,8 @@ def run_coadds_and_save(
 # -----------------------------------------------------------------------------
 # CLI
 # -----------------------------------------------------------------------------
+# Parse command-line options, read overlap windows, then call the high-level
+# pipeline and print the output HDF5 path.
 
 if __name__ == "__main__":
     import argparse
