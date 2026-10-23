@@ -11,9 +11,7 @@
 ## Ask for one core on one node
 #SBATCH --nodes=1 
 
-#SBATCH --ntasks=16
-##SBATCH --cpus-per-task=16
-
+#SBATCH --ntasks=4
 
 ## Promise that each processor will use no more than 1GB of RAM
 #SBATCH --mem-per-cpu=4GB
@@ -55,7 +53,8 @@ python get_coadds_julia_cli_csv_spectres.py \
   --overlaps-csv window_overlaps_2024.csv \
   --dates-and-dirs dates_and_dirs.pkl \
   --out coadds_outputs.h5 \
-  --workers 16 \
+  --workers 4 \
+  --test-mode \
   --chunksize 1
  
 
