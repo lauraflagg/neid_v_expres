@@ -148,65 +148,6 @@ def read_neid_fits(hdul: fits.HDUList):
     return wave, flux, uncert
 
 
-# Wavelengths (Angstroms) at which the nearest original echelle order is assessed.
-SNR95_TARGETS = (4000.0, 5000.0, 6000.0)
-
-
-def snr95_nearest_orders(
-    wave: np.ndarray, flux: np.ndarray, unc: np.ndarray
-) -> Tuple[float, float, float]:
-    """Return 95th-percentile S/N for orders nearest 4000, 5000, and 6000 A.
-
-    Order centers are medians of finite wavelength samples. S/N is computed
-    from the *original*, unresampled spectrum and only where flux and
-    uncertainty are finite and uncertainty is positive. The calculation
-    handles one selected order at a time to avoid making a full-spectrum S/N
-    array, keeping its additional memory use small.
-    """
-    wave = np.asarray(wave)
-    flux = np.asarray(flux)
-    unc = np.asarray(unc)
-
-    if wave.ndim == 1:
-        wave_orders, flux_orders, unc_orders = wave[None, :], flux[None, :], unc[None, :]
-    elif wave.ndim == 2:
-        wave_orders, flux_orders, unc_orders = wave, flux, unc
-    else:
-        raise ValueError(f"Expected 1D or 2D spectrum arrays; got wave.ndim={wave.ndim}")
-
-    # Find each order's center without creating a full-size temporary array.
-    centers = np.full(wave_orders.shape[0], np.nan, dtype=float)
-    for order_idx in range(wave_orders.shape[0]):
-        order_wave = wave_orders[order_idx]
-        finite_wave = np.isfinite(order_wave)
-        if np.any(finite_wave):
-            centers[order_idx] = np.median(order_wave[finite_wave])
-
-    results = []
-    for target in SNR95_TARGETS:
-        valid_centers = np.isfinite(centers)
-        if not np.any(valid_centers):
-            results.append(float("nan"))
-            continue
-
-        # Pick the order whose median wavelength is closest to this target.
-        candidates = np.flatnonzero(valid_centers)
-        order_idx = candidates[np.argmin(np.abs(centers[candidates] - target))]
-
-        # Build only a one-order S/N vector; invalid or nonpositive errors
-        # are excluded, and missing data produce NaN in the manifest.
-        order_flux = np.asarray(flux_orders[order_idx], dtype=float)
-        order_unc = np.asarray(unc_orders[order_idx], dtype=float)
-        valid = np.isfinite(order_flux) & np.isfinite(order_unc) & (order_unc > 0)
-        if np.any(valid):
-            snr = order_flux[valid] / order_unc[valid]
-            results.append(float(np.percentile(snr, 95)))
-        else:
-            results.append(float("nan"))
-
-    return tuple(results)
-
-
 # -----------------------------------------------------------------------------
 # Date-set construction
 # -----------------------------------------------------------------------------
@@ -342,7 +283,7 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
     # No observations means there is no reference wavelength grid or spectrum.
     # Keep the return convention: three empty 1D arrays.
     if len(window_obs) == 0:
-        return np.array([]), np.array([]), np.array([]), [], {}
+        return np.array([]), np.array([]), np.array([]), []
 
     # Per-pixel running totals, all with spectrum shape S:
     #   sum_w[p]     = sum over exposures k of 1 / unc[k,p]**2
@@ -356,8 +297,6 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
 
     # Track files with at least one valid pixel in the final coadd.
     contributing_files: List[str] = []
-    # Store only three scalar S/N summaries per input file for the manifest.
-    snr95_by_file: Dict[str, Tuple[float, float, float]] = {}
 
     # Reused scratch array of shape S for the current exposure's weights.
     w = None
@@ -378,10 +317,6 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
         flux = np.asarray(flux, dtype=float)
         unc = np.asarray(unc, dtype=float)
         wave = np.asarray(wave)
-
-        # Measure each original spectrum before any resampling. Only the
-        # selected order's S/N vector is materialized by the helper.
-        snr95_by_file[str(floc)] = snr95_nearest_orders(wave, flux, unc)
 
         if wave_ref is None:
             # First exposure: adopt its wavelength array (shape S) as the grid.
@@ -451,7 +386,7 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
 
     # Return wavelength grid, weighted-mean flux and its 1-sigma uncertainty.
     # All three have shape S for a non-empty window.
-    return np.asarray(wave_ref), coadd_flux, coadd_unc, contributing_files, snr95_by_file
+    return np.asarray(wave_ref), coadd_flux, coadd_unc, contributing_files
 
 # --- multiprocessing worker must be top-level for pickling ---
 
@@ -459,13 +394,11 @@ def _worker_task(args):
     """Worker: coadd one window.
 
     args = (index, instrument, window_obs)
-    returns (index, wave_ref, coadd_flux, coadd_unc, contributing_files, snr95_by_file)
+    returns (index, wave_ref, coadd_flux, coadd_unc, contributing_files)
     """
     i, instrument, window_obs = args
-    wave_ref, coadd_flux, coadd_unc, contributing_files, snr95_by_file = coadd_one_window(
-        window_obs, instrument=instrument
-    )
-    return i, wave_ref, coadd_flux, coadd_unc, contributing_files, snr95_by_file
+    wave_ref, coadd_flux, coadd_unc, contributing_files = coadd_one_window(window_obs, instrument=instrument)
+    return i, wave_ref, coadd_flux, coadd_unc, contributing_files
 
 
 # -----------------------------------------------------------------------------
@@ -547,35 +480,21 @@ def save_coadds_hdf5_incremental(
             if workers and workers > 1:
                 ctx = mp.get_context(mp_start_method)
                 with ctx.Pool(processes=workers, maxtasksperchild=50) as pool:
-                    for i, wave_ref, coadd_flux, coadd_unc, contributing_files, snr95_by_file in pool.imap(_worker_task, tasks, chunksize=chunksize):
+                    for i, wave_ref, coadd_flux, coadd_unc, contributing_files in pool.imap(_worker_task, tasks, chunksize=chunksize):
                         window_bounds = overlaps[i] if overlaps is not None else ("", "")
                         jd_by_file = {floc: jd for jd, floc in date_sets[i]}
-                        # Include every input spectrum in the manifest, even
-                        # if it supplied no valid pixels to the final coadd.
-                        contributing_set = set(contributing_files)
-                        for jd, floc in date_sets[i]:
-                            snr_values = snr95_by_file.get(floc, (float("nan"),) * 3)
-                            manifest_rows.append([
-                                inst_name, f"{i:04d}", *window_bounds, jd, floc,
-                                floc in contributing_set, *snr_values
-                            ])
+                        for floc in contributing_files:
+                            manifest_rows.append([inst_name, f"{i:04d}", *window_bounds, jd_by_file.get(floc, ""), floc])
                         gwls.create_dataset(f"{i:04d}", data=np.asarray(wave_ref), compression="gzip", shuffle=True)
                         gco.create_dataset(f"{i:04d}", data=np.asarray(coadd_flux), compression="gzip", shuffle=True)
                         gun.create_dataset(f"{i:04d}", data=np.asarray(coadd_unc), compression="gzip", shuffle=True)
             else:
                 for i, instrument, window_obs in tasks:
-                    wave_ref, coadd_flux, coadd_unc, contributing_files, snr95_by_file = coadd_one_window(window_obs, instrument=instrument)
+                    wave_ref, coadd_flux, coadd_unc, contributing_files = coadd_one_window(window_obs, instrument=instrument)
                     window_bounds = overlaps[i] if overlaps is not None else ("", "")
                     jd_by_file = {floc: jd for jd, floc in window_obs}
-                    # Keep one manifest row for every original spectrum in
-                    # this window; the flag preserves the prior contributor info.
-                    contributing_set = set(contributing_files)
-                    for jd, floc in window_obs:
-                        snr_values = snr95_by_file.get(floc, (float("nan"),) * 3)
-                        manifest_rows.append([
-                            inst_name, f"{i:04d}", *window_bounds, jd, floc,
-                            floc in contributing_set, *snr_values
-                        ])
+                    for floc in contributing_files:
+                        manifest_rows.append([inst_name, f"{i:04d}", *window_bounds, jd_by_file.get(floc, ""), floc])
                     gwls.create_dataset(f"{i:04d}", data=np.asarray(wave_ref), compression="gzip", shuffle=True)
                     gco.create_dataset(f"{i:04d}", data=np.asarray(coadd_flux), compression="gzip", shuffle=True)
                     gun.create_dataset(f"{i:04d}", data=np.asarray(coadd_unc), compression="gzip", shuffle=True)
@@ -584,10 +503,7 @@ def save_coadds_hdf5_incremental(
         with open(manifest_csv, "w", newline="", encoding="utf-8") as csvfile:
             out = writer(csvfile)
             out.writerow(
-                [
-                    "instrument", "window_id", "start_jd", "end_jd", "input_jd", "input_file",
-                    "contributed_to_coadd", "snr95_nearest_4000A", "snr95_nearest_5000A", "snr95_nearest_6000A",
-                ]
+                ["instrument", "window_id", "start_jd", "end_jd", "input_jd", "input_file"]
             )
             out.writerows(manifest_rows)
 
@@ -682,6 +598,11 @@ if __name__ == "__main__":
         default=None,
         help="CSV provenance output (default: alongside --out as <stem>_inputs.csv)",
     )
+    parser.add_argument(
+        "--test-mode",
+        action="store_true",
+        help="Process only the first five overlap windows and write outputs with a _test5 suffix.",
+    )
 
     parser.add_argument(
         "--workers",
@@ -706,12 +627,34 @@ if __name__ == "__main__":
 
     overlaps = load_overlaps_csv(args.overlaps_csv, start_col=args.start_col, end_col=args.end_col)
 
+    out_h5 = args.out
+    manifest_csv = args.manifest_csv
+    if args.test_mode:
+        # Limit both instruments to the same first five windows from the CSV.
+        overlaps = overlaps[:5]
+        print(f"Test mode: processing {len(overlaps)} overlap window(s).")
+
+        # Keep test outputs separate from production outputs. Apply the suffix
+        # to explicitly supplied paths too; the default manifest is derived
+        # from the already-suffixed HDF5 path inside run_coadds_and_save().
+        def add_test_suffix(path: str) -> str:
+            from pathlib import Path
+
+            p = Path(path)
+            if p.stem.endswith("_test5"):
+                return str(p)
+            return str(p.with_name(f"{p.stem}_test5{p.suffix}"))
+
+        out_h5 = add_test_suffix(out_h5)
+        if manifest_csv is not None:
+            manifest_csv = add_test_suffix(manifest_csv)
+
     out_path = run_coadds_and_save(
         overlaps,
         dates_and_dirs_pkl=args.dates_and_dirs,
-        out_h5=args.out,
+        out_h5=out_h5,
         overlaps_csv=args.overlaps_csv,
-        manifest_csv=args.manifest_csv,
+        manifest_csv=manifest_csv,
         workers=args.workers,
         chunksize=args.chunksize,
         mp_start_method=args.mp_start_method,
