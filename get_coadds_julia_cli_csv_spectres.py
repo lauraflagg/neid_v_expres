@@ -48,6 +48,23 @@ Run
       --out coadds_outputs.h5 \
       --workers 8
 
+Test mode
+---------
+Use `--test-mode` to process only the first five overlap windows. Test outputs
+are written separately with a `_test5` suffix, so the normal output is not
+overwritten. Example commands:
+
+  # Use the default input/output filenames; creates coadds_outputs_test5.h5
+  python get_coadds_julia_cli_csv_spectres.py --test-mode
+
+  # Specify test inputs, output, and worker count
+  python get_coadds_julia_cli_csv_spectres.py \\
+      --overlaps-csv window_overlaps.csv \\
+      --dates-and-dirs dates_and_dirs.pkl \\
+      --out coadds_outputs.h5 \\
+      --workers 2 \\
+      --test-mode
+
 Dependencies
 ------------
   pip install spectres
