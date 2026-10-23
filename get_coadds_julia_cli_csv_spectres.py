@@ -58,7 +58,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Sequence, Tuple
 
-from csv import DictReader
+from csv import DictReader, writer
 
 import numpy as np
 import pickle
@@ -283,7 +283,7 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
     # No observations means there is no reference wavelength grid or spectrum.
     # Keep the return convention: three empty 1D arrays.
     if len(window_obs) == 0:
-        return np.array([]), np.array([]), np.array([])
+        return np.array([]), np.array([]), np.array([]), []
 
     # Per-pixel running totals, all with spectrum shape S:
     #   sum_w[p]     = sum over exposures k of 1 / unc[k,p]**2
@@ -294,6 +294,9 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
 
     # The first exposure defines the common wavelength grid. Its shape is S.
     wave_ref = None
+
+    # Track files with at least one valid pixel in the final coadd.
+    contributing_files: List[str] = []
 
     # Reused scratch array of shape S for the current exposure's weights.
     w = None
@@ -340,6 +343,8 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
         # Boolean mask with shape S: only finite flux, finite uncertainty,
         # and strictly positive uncertainty are allowed to contribute.
         valid = np.isfinite(flux) & np.isfinite(unc) & (unc > 0)
+        if np.any(valid):
+            contributing_files.append(str(floc))
 
         # Reset scratch weights for this exposure. Invalid pixels stay at zero.
         w.fill(0.0)
@@ -381,7 +386,7 @@ def coadd_one_window(window_obs: DateSet, instrument: str):
 
     # Return wavelength grid, weighted-mean flux and its 1-sigma uncertainty.
     # All three have shape S for a non-empty window.
-    return np.asarray(wave_ref), coadd_flux, coadd_unc
+    return np.asarray(wave_ref), coadd_flux, coadd_unc, contributing_files
 
 # --- multiprocessing worker must be top-level for pickling ---
 
@@ -389,11 +394,11 @@ def _worker_task(args):
     """Worker: coadd one window.
 
     args = (index, instrument, window_obs)
-    returns (index, wave_ref, coadd_flux, coadd_unc)
+    returns (index, wave_ref, coadd_flux, coadd_unc, contributing_files)
     """
     i, instrument, window_obs = args
-    wave_ref, coadd_flux, coadd_unc = coadd_one_window(window_obs, instrument=instrument)
-    return i, wave_ref, coadd_flux, coadd_unc
+    wave_ref, coadd_flux, coadd_unc, contributing_files = coadd_one_window(window_obs, instrument=instrument)
+    return i, wave_ref, coadd_flux, coadd_unc, contributing_files
 
 
 # -----------------------------------------------------------------------------
@@ -440,6 +445,7 @@ def save_coadds_hdf5_incremental(
     expres_date_sets: DateSets,
     source_dates_and_dirs: str | None = None,
     source_overlaps_csv: str | None = None,
+    manifest_csv: str | None = None,
     workers: int = 1,
     chunksize: int = 1,
     mp_start_method: str = "spawn",
@@ -448,6 +454,7 @@ def save_coadds_hdf5_incremental(
 
     import multiprocessing as mp
 
+    manifest_rows = []
     with h5py.File(out_path, "w") as f:
         f.attrs["created_utc"] = datetime.utcnow().isoformat() + "Z"
         f.attrs["format"] = "coadds_hdf5_v1"
@@ -473,16 +480,32 @@ def save_coadds_hdf5_incremental(
             if workers and workers > 1:
                 ctx = mp.get_context(mp_start_method)
                 with ctx.Pool(processes=workers, maxtasksperchild=50) as pool:
-                    for i, wave_ref, coadd_flux, coadd_unc in pool.imap(_worker_task, tasks, chunksize=chunksize):
+                    for i, wave_ref, coadd_flux, coadd_unc, contributing_files in pool.imap(_worker_task, tasks, chunksize=chunksize):
+                        window_bounds = overlaps[i] if overlaps is not None else ("", "")
+                        jd_by_file = {floc: jd for jd, floc in date_sets[i]}
+                        for floc in contributing_files:
+                            manifest_rows.append([inst_name, f"{i:04d}", *window_bounds, jd_by_file.get(floc, ""), floc])
                         gwls.create_dataset(f"{i:04d}", data=np.asarray(wave_ref), compression="gzip", shuffle=True)
                         gco.create_dataset(f"{i:04d}", data=np.asarray(coadd_flux), compression="gzip", shuffle=True)
                         gun.create_dataset(f"{i:04d}", data=np.asarray(coadd_unc), compression="gzip", shuffle=True)
             else:
                 for i, instrument, window_obs in tasks:
-                    wave_ref, coadd_flux, coadd_unc = coadd_one_window(window_obs, instrument=instrument)
+                    wave_ref, coadd_flux, coadd_unc, contributing_files = coadd_one_window(window_obs, instrument=instrument)
+                    window_bounds = overlaps[i] if overlaps is not None else ("", "")
+                    jd_by_file = {floc: jd for jd, floc in window_obs}
+                    for floc in contributing_files:
+                        manifest_rows.append([inst_name, f"{i:04d}", *window_bounds, jd_by_file.get(floc, ""), floc])
                     gwls.create_dataset(f"{i:04d}", data=np.asarray(wave_ref), compression="gzip", shuffle=True)
                     gco.create_dataset(f"{i:04d}", data=np.asarray(coadd_flux), compression="gzip", shuffle=True)
                     gun.create_dataset(f"{i:04d}", data=np.asarray(coadd_unc), compression="gzip", shuffle=True)
+
+    if manifest_csv is not None:
+        with open(manifest_csv, "w", newline="", encoding="utf-8") as csvfile:
+            out = writer(csvfile)
+            out.writerow(
+                ["instrument", "window_id", "start_jd", "end_jd", "input_jd", "input_file"]
+            )
+            out.writerows(manifest_rows)
 
     return out_path
 
@@ -498,6 +521,7 @@ def run_coadds_and_save(
     dates_and_dirs_pkl: str = "dates_and_dirs.pkl",
     out_h5: str = "coadds_outputs.h5",
     overlaps_csv: str | None = None,
+    manifest_csv: str | None = None,
     workers: int = 1,
     chunksize: int = 1,
     mp_start_method: str = "spawn",
@@ -508,6 +532,8 @@ def run_coadds_and_save(
         dates_and_dirs = pickle.load(f)
 
     neid_date_sets, expres_date_sets = build_date_sets(overlaps, dates_and_dirs)
+    if manifest_csv is None:
+        manifest_csv = str(__import__("pathlib").Path(out_h5).with_name(__import__("pathlib").Path(out_h5).stem + "_inputs.csv"))
 
     return save_coadds_hdf5_incremental(
         out_h5,
@@ -516,6 +542,7 @@ def run_coadds_and_save(
         expres_date_sets=expres_date_sets,
         source_dates_and_dirs=dates_and_dirs_pkl,
         source_overlaps_csv=overlaps_csv,
+        manifest_csv=manifest_csv,
         workers=workers,
         chunksize=chunksize,
         mp_start_method=mp_start_method,
@@ -566,6 +593,11 @@ if __name__ == "__main__":
         default="coadds_outputs.h5",
         help="Output HDF5 path (default: %(default)s)",
     )
+    parser.add_argument(
+        "--manifest-csv",
+        default=None,
+        help="CSV provenance output (default: alongside --out as <stem>_inputs.csv)",
+    )
 
     parser.add_argument(
         "--workers",
@@ -595,6 +627,7 @@ if __name__ == "__main__":
         dates_and_dirs_pkl=args.dates_and_dirs,
         out_h5=args.out,
         overlaps_csv=args.overlaps_csv,
+        manifest_csv=args.manifest_csv,
         workers=args.workers,
         chunksize=args.chunksize,
         mp_start_method=args.mp_start_method,
